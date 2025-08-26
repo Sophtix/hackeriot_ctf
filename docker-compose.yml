@@ -1,0 +1,52 @@
+networks:
+  segment_internal:
+    ipam:
+      config:
+        - subnet: 172.16.5.0/24
+  segment_secure:
+    ipam:
+      config:
+        - subnet: 192.168.80.0/24
+
+services:
+  kali:
+    build: 
+      context: ./kali
+    hostname: kali
+    networks:
+      segment_internal:
+        ipv4_address: 172.16.5.2
+    ports:
+      - "2200:22"
+    privileged: true
+
+  jump:
+    build:
+      context: ./jump
+      args:
+        JUMP_ROOT_PASSWORD: ${JUMP_ROOT_PASSWORD}
+        SECURE_ROOT_PASSWORD: ${SECURE_ROOT_PASSWORD}
+    hostname: jump
+    networks:
+      segment_internal:
+        ipv4_address: 172.16.5.3
+      segment_secure:
+        ipv4_address: 192.168.80.10
+    expose:
+      - 23
+      - 21
+      - 30000-30009
+
+  secure:
+    build:
+      context: ./secure
+      args:
+        SECURE_FLAG: ${SECURE_FLAG}
+        SECURE_ROOT_PASSWORD: ${SECURE_ROOT_PASSWORD}
+    hostname: secure
+    networks:
+      segment_secure:
+        ipv4_address: 192.168.80.30
+    expose:
+      - 80
+      - 22
