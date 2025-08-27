@@ -14,7 +14,7 @@ The participants will learn how to set up and use network tunneling and pivoting
 During a covert red team operation, the team compromised the following servers and set their root passwords:
 - Jump: 172.16.5.3:22 - root:hackme123
 - Secure: 192.168.80.30:22 - root:Aa123456
-The network topology consists of two segments: an internal segment (172.16.5.0/24) and a secure segment (192.168.80.0/24). The jump server (172.16.5.3) acts as a bridge between these two segments. The attacker sits on the internal segment.
+The network topology consists of two segments: an internal segment (172.16.5.0/24) and a secure segment (192.168.80.0/24). The jump server (172.16.5.3) acts as a bridge between these two segments. The attacker sits on the internal segment 172.16.5.2.
 It is known that the Secure server is running a vulnerable web application on port 80.
 The objective is to use the compromised servers to pivot into the secure segment and access sensitive data in the web application.
 
