@@ -25,7 +25,6 @@ services:
       context: ./jump
       args:
         JUMP_ROOT_PASSWORD: ${JUMP_ROOT_PASSWORD}
-        SECURE_ROOT_PASSWORD: ${SECURE_ROOT_PASSWORD}
     hostname: jump
     networks:
       segment_internal:
@@ -33,9 +32,7 @@ services:
       segment_secure:
         ipv4_address: 192.168.80.10
     expose:
-      - 23
-      - 21
-      - 30000-30009
+      - 22
 
   secure:
     build:
@@ -48,5 +45,4 @@ services:
       segment_secure:
         ipv4_address: 192.168.80.30
     expose:
-      - 80
       - 22
