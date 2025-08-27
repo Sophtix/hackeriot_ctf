@@ -34,6 +34,18 @@ flowchart LR
 
 
 ## Step‑by‑Step Communication Flows & Commands
+### Step 0 - Establish Initial Connections
+Connect to **Attacker** (172.16.5.2) via SSH.
+```bash
+ssh root@172.16.5.2
+```
+
+From there connect to **Jump** (172.16.5.3) via SSH.
+```bash
+ssh root@172.16.5.3
+```
+
+Open additional SSH session for **Attacker** machine.
 
 ### Step 1 – Create a reverse SOCKS proxy via **Jump** (preferred for pivoting)
 Goal: Get a SOCKS5 proxy that lets the **attacker** drive traffic through **Jump** into 192.168.80.0/24.
