@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Start Compose Stack{% endblock %}
+{% block content %}
+  <h2>Register and Start CTF Box</h2>
+  {% if progress %}
+    <div id="progress-indicator" style="text-align:center;">
+      <h3>CTF Box is being created...</h3>
+      <div class="spinner" style="margin: 32px auto;">
+        <style>
+          .spinner {
+            width: 48px;
+            height: 48px;
+            border: 6px solid #e5e7eb;
+            border-top: 6px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+          }
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        </style>
+      </div>
+      <p id="progress-msg">This may take up to a minute. Please wait...</p>
+    </div>
+    <script>
+      function pollStatus() {
+        fetch("{{ url_for('stack_status') }}")
+          .then(r => r.json())
+          .then(data => {
+            if (data.status === 'ready') {
+              window.location.href = "{{ url_for('dashboard') }}";
+            } else {
+              setTimeout(pollStatus, 2000);
+            }
+          });
+      }
+      pollStatus();
+    </script>
+  {% else %}
+    <form method="post">
+      <label for="name">Your Name:</label>
+      <input type="text" id="name" name="name" required>
+      <button type="submit">Start My Stack</button>
+    </form>
+    {% if error %}
+      <p class="error">{{ error }}</p>
+    {% endif %}
+  {% endif %}
+{% endblock %}

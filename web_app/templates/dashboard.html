@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+  <h2>Welcome, {{ username }}!</h2>
+  <p>Your box is deployed and running.</p>
+    <p>SSH access is now available:</p>
+    <ul>
+      <li><b>Username:</b> {{ username }}</li>
+      <li><b>Password:</b> {{ password }}</li>
+      <li><b>Host:</b> {{ host_ip }}</li>
+      <li><b>Port:</b> {{ host_port }}</li>
+    </ul>
+    <p>You can connect using: <code>ssh {{ username }}@{{ host_ip }} -p {{ host_port }}</code></p>
+    <div style="display: flex; justify-content: center;">
+        <div style="width: 50%;">
+  {% if time_left %}
+    <p><b>Time left:</b> <span id="time-left">{{ time_left }}</span></p>
+    <form method="post" action="{{ url_for('extend_time') }}">
+      <button type="submit">Extend Time by 30 min</button>
+    </form>
+  {% endif %}
+  <form method="get" action="{{ url_for('submit_flag') }}" style="margin-top: 16px;">
+      <button type="submit" style="background-color: green;">Submit Flag</button>
+    </form>
+  <form method="post" action="{{ url_for('logout') }}" style="margin-top: 16px;">
+    <button type="submit">Log out</button>
+  </form>
+  </div>
+  </div>
+{% if time_left %}
+      <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script>
+      var socket = io();
+      socket.on('connect', function() {
+        // Send expiry time to server for timer updates
+        socket.emit('join_timer', { expiry: "{{ session['expiry'] if session['expiry'] else '' }}" });
+      });
+      socket.on('time_left', function(data) {
+        if (data.time_left !== undefined) {
+          document.getElementById('time-left').textContent = data.time_left;
+        }
+        if (data.expired) {
+          window.location.reload();
+        }
+      });
+    </script>
+      {% endif %}
+{% endblock %}

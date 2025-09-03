@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Check Flag{% endblock %}
+{% block content %}
+    <h2>Submit the Secure Flag</h2>
+    <form method="post">
+        <input type="text" name="flag" placeholder="Enter flag here" required>
+        <button type="submit">Submit</button>
+    </form>
+    {% if message %}
+        <p>{{ message }}</p>
+    {% endif %}
+{% endblock %}

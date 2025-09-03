@@ -3,8 +3,12 @@ FROM debian:bookworm-slim
 ARG SECURE_FLAG
 ARG SECURE_ROOT_PASSWORD
 
+
 COPY chisel /usr/local/bin/chisel
 RUN chmod +x /usr/local/bin/chisel
+
+
+RUN echo "root:$SECURE_ROOT_PASSWORD" | chpasswd
 
 RUN apt-get update && \
     apt-get install -y \
@@ -13,13 +17,14 @@ RUN apt-get update && \
     python3 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
-    echo "root:$SECURE_ROOT_PASSWORD" | chpasswd && \
     mkdir -p /run/sshd && \
     echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
 
 COPY server.py /app/server.py
 
 WORKDIR /app
+
+
 
 EXPOSE 22
 
