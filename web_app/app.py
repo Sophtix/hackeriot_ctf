@@ -5,42 +5,66 @@ import subprocess
 import datetime
 import threading
 import time
-import requests
 from flask import Flask, render_template, session, redirect, url_for, jsonify, request
-from flask_socketio import SocketIO, emit, join_room, leave_room
-
-
+from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
+import requests
 
 # --- App Initialization ---
 app = Flask(__name__)
 app.secret_key = 'replace_this_with_a_secure_random_key'
 socketio = SocketIO(app, async_mode='threading', manage_session=False)
 
+
 # --- WebSocket Events ---
+
+@socketio.on('join_stack_progress')
+def handle_join_stack_progress(data):
+    """
+    Client joins stack progress updates for their username.
+    """
+    username = data.get('username')
+    room_name = f"stack_progress_{username}"
+    join_room(room_name)
+    
+    def send_stack_progress():
+        while True:
+            progress = _stack_progress.get(username)
+            if progress:
+                if progress.get('status') == 'ready':
+                    socketio.emit('stack_progress', {'status': 'ready'}, to=room_name)
+                    break
+                elif progress.get('status') == 'error':
+                    socketio.emit('stack_progress', {'status': 'error', 'error': progress.get('error', 'Unknown error')}, to=room_name)
+                    break
+            time.sleep(1)
+    threading.Thread(target=send_stack_progress, daemon=True).start()
 
 @socketio.on('join_timer')
 def handle_join_timer(data):
     """
     Client joins timer updates for their session. Pass expiry as argument.
     """
-    sid = request.sid
-    join_room(sid)
-    # Get expiry from data (sent by client on join)
     expiry_str = data.get('expiry')
+    room_name = f"timer_{expiry_str}"  # Use expiry as unique room identifier
+    join_room(room_name)
+    
     if not expiry_str:
-        socketio.emit('time_left', {'expired': True}, to=sid)
+        socketio.emit('time_left', {'expired': True}, to=room_name)
         return
     try:
         expiry = datetime.datetime.fromisoformat(expiry_str)
+        # Ensure expiry is timezone-aware (treat as UTC if timezone-naive)
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=datetime.UTC)
     except Exception:
-        socketio.emit('time_left', {'expired': True}, to=sid)
+        socketio.emit('time_left', {'expired': True}, to=room_name)
         return
     def send_time_left():
         while True:
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.UTC)
             expired = now >= expiry
             if expired:
-                socketio.emit('time_left', {'expired': True}, to=sid)
+                socketio.emit('time_left', {'expired': True}, to=room_name)
                 break
             delta = expiry - now
             total_seconds = int(delta.total_seconds())
@@ -51,7 +75,7 @@ def handle_join_timer(data):
                 time_left_str = f"{hours}:{minutes:02}:{seconds:02}"
             else:
                 time_left_str = f"{minutes}:{seconds:02}"
-            socketio.emit('time_left', {'time_left': time_left_str, 'expired': False}, to=sid)
+            socketio.emit('time_left', {'time_left': time_left_str, 'expired': False}, to=room_name)
             time.sleep(1)
     threading.Thread(target=send_time_left, daemon=True).start()
 
@@ -80,7 +104,6 @@ os.makedirs(WORKDIR, exist_ok=True)
 
 
 # Use a global dict to track stack progress by username
-import threading as _threading
 _stack_progress = {}
 
 def _deploy_stack_async(username):
@@ -172,59 +195,23 @@ def index():
     # If user is already authenticated and stack deployed, redirect to dashboard
     if session.get("authenticated") and session.get("stack_deployed"):
         return redirect(url_for("dashboard"))
-
-    # Show progress if stack is being created
+    
+    # If user is in progress (stack being created), redirect to dashboard to show loading
     if session.get("progress"):
-        username = session.get("username")
-        progress = _stack_progress.get(username)
-        if progress and progress.get("status") == "ready":
-            # Stack is ready, finalize session and show info
-            session["authenticated"] = True
-            session["stack_deployed"] = True
-            session["ssh_username"] = progress["ssh_username"]
-            session["ssh_password"] = progress["ssh_password"]
-            session["host_ip"] = progress["host_ip"]
-            session["host_port"] = progress["host_port"]
-            # Set timer: 1 hour from now
-            session["expiry"] = (datetime.datetime.utcnow() + datetime.timedelta(hours=1)).isoformat()
-            session.pop("progress", None)
-            _stack_progress.pop(username, None)
-            # redirect to dashboard
-            return redirect(url_for("dashboard"))
-        elif progress and progress.get("status") == "error":
-            error_msg = progress.get("error", "Unknown error")
-            session.pop("progress", None)
-            _stack_progress.pop(username, None)
-            return render_template("index.html", error=f"Error launching stack: {error_msg}")
-        else:
-            return render_template("index.html", progress=True)
+        return redirect(url_for("dashboard"))
 
     if request.method == "POST":
         username = request.form.get("name")
         if not session.get("username"):
-            # Start stack creation in background
+            # Start stack creation in background and redirect to dashboard
             session["progress"] = True
             session["username"] = username
             session.modified = True
-            _threading.Thread(target=_deploy_stack_async, args=(username,)).start()
-            return render_template("index.html", progress=True)
+            threading.Thread(target=_deploy_stack_async, args=(username,)).start()
+            return redirect(url_for("dashboard"))
         else:
             return render_template("index.html", error="Username already taken. Please choose another one.")
     return render_template("index.html")
-
-@app.route("/stack_status")
-def stack_status():
-    """
-    Endpoint for AJAX polling of stack creation progress.
-    """
-    username = session.get("username")
-    progress = _stack_progress.get(username)
-    if progress:
-        if progress.get("status") == "ready":
-            return jsonify({"status": "ready"})
-        elif progress.get("status") == "error":
-            return jsonify({"status": "error", "error": progress.get("error", "Unknown error")})
-    return jsonify({"status": "pending"})
 
 
 
@@ -250,46 +237,82 @@ def check_flag():
 @app.route("/dashboard")
 def dashboard():
     """
-    Dashboard page for authenticated users with deployed stack.
-    Shows stack info, timer, and provides logout/extend options.
-    Removes stack if timer expired.
+    Dashboard page for authenticated users with deployed stack or in progress.
+    Shows loading indicator during stack creation, then shows connection info.
     """
-    if not (session.get("authenticated") and session.get("stack_deployed")):
+    # If user is not authenticated and not in progress, redirect to index
+    if not (session.get("authenticated") or session.get("progress")):
         return redirect(url_for("index"))
-    expiry_str = session.get("expiry")
-    username = session.get("username", "root")
-    expired = False
-    time_left = None
-    if expiry_str:
-        expiry = datetime.datetime.fromisoformat(expiry_str)
-        now = datetime.datetime.now()
-        if now >= expiry:
-            expired = True
+    
+    # If stack is being created (progress state)
+    if session.get("progress"):
+        username = session.get("username")
+        progress = _stack_progress.get(username)
+        
+        if progress and progress.get("status") == "ready":
+            # Stack is ready, finalize session
+            session["authenticated"] = True
+            session["stack_deployed"] = True
+            session["ssh_username"] = progress["ssh_username"]
+            session["ssh_password"] = progress["ssh_password"]
+            session["host_ip"] = progress["host_ip"]
+            session["host_port"] = progress["host_port"]
+            # Set timer: 1 hour from now
+            session["expiry"] = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)).isoformat()
+            session.pop("progress", None)
+            _stack_progress.pop(username, None)
+            # Fall through to show the completed dashboard
+        elif progress and progress.get("status") == "error":
+            error_msg = progress.get("error", "Unknown error")
+            session.clear()
+            return redirect(url_for("index"))
         else:
-            time_left = expiry - now
-    if expired:
-        # Remove stack and clear session
-        try:
-            subprocess.run([
-                "docker", "compose",
-                "-p", username,
-                "-f", COMPOSE_FILE,
-                "down"
-            ], check=True)
-        except Exception:
-            pass
-        session.clear()
-        return render_template("index.html", error="Your time has expired. The stack has been removed.")
-    # Show dashboard with timer
-    return render_template(
-                "dashboard.html",
-                success=True,
-                username=session.get("ssh_username"),
-                password=session.get("ssh_password"),
-                host_ip=session.get("host_ip"),
-                host_port=session.get("host_port"),
-                time_left=time_left
-            )
+            # Still in progress, show loading screen
+            return render_template("dashboard.html", progress=True, username=username)
+    
+    # Stack is deployed and ready - check if timer expired
+    if session.get("authenticated") and session.get("stack_deployed"):
+        expiry_str = session.get("expiry")
+        username = session.get("username", "root")
+        expired = False
+        time_left = None
+        if expiry_str:
+            expiry = datetime.datetime.fromisoformat(expiry_str)
+            # Ensure expiry is timezone-aware (treat as UTC if timezone-naive)
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=datetime.UTC)
+            now = datetime.datetime.now(datetime.UTC)
+            if now >= expiry:
+                expired = True
+            else:
+                time_left = expiry - now
+        if expired:
+            # Remove stack and clear session
+            try:
+                subprocess.run([
+                    "docker", "compose",
+                    "-p", username,
+                    "-f", COMPOSE_FILE,
+                    "down"
+                ], check=True)
+            except Exception:
+                pass
+            session.clear()
+            return redirect(url_for("index"))
+        
+        # Show dashboard with connection info and timer
+        return render_template(
+            "dashboard.html",
+            success=True,
+            username=session.get("ssh_username"),
+            password=session.get("ssh_password"),
+            host_ip=session.get("host_ip"),
+            host_port=session.get("host_port"),
+            time_left=time_left
+        )
+    
+    # Fallback - redirect to index
+    return redirect(url_for("index"))
 
 @app.route("/extend_time", methods=["POST"])
 def extend_time():
@@ -301,6 +324,9 @@ def extend_time():
     expiry_str = session.get("expiry")
     if expiry_str:
         expiry = datetime.datetime.fromisoformat(expiry_str)
+        # Ensure expiry is timezone-aware (treat as UTC if timezone-naive)
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=datetime.UTC)
         new_expiry = expiry + datetime.timedelta(minutes=30)
         session["expiry"] = new_expiry.isoformat()
     return redirect(url_for("dashboard"))
